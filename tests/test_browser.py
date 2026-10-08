@@ -62,10 +62,12 @@ def test_map_selection_routes_simulation_export(browser_page):
     choose_junction(page, base)
     assert page.locator('#approach option').count() == 3
     assert page.locator('.approach-pin').count() == 3
+    page.select_option('#destination', '1')
+    page.wait_for_function("document.querySelector('#status').textContent.includes('Løkke funnet')")
     shortest = int(page.locator('#cars').inner_text())
     page.select_option('#mode', 'time')
     fastest = int(page.locator('#cars').inner_text())
-    assert fastest < shortest
+    assert fastest <= shortest
     page.locator('#sim-cars').fill(str(fastest - 1))
     page.locator('#sim-cars').dispatch_event('change')
     page.wait_for_function("document.querySelector('#entry-state').textContent.includes('Stor nok luke')", timeout=15000)
@@ -88,6 +90,7 @@ def test_failed_direction_clears_previous_result(browser_page):
     page, base, _ = browser_page
     choose_junction(page, base)
     page.select_option('#waiting-approach', '0')
+    page.select_option('#destination', '0')
     page.wait_for_function("document.querySelector('#status').textContent.includes('Ingen lukket løkke')")
     assert page.locator('#cars').inner_text() == '—'
     assert page.locator('.car-pin').count() == 0
@@ -136,8 +139,28 @@ def test_ego_position_right_hand_priority_and_turn_signal(browser_page):
     left = next((o.get_attribute('value') for o in options.all() if o.inner_text().startswith('Til høyre')), None)
     assert left is not None
     page.select_option('#destination', left)
+    page.wait_for_function("document.querySelector('#status').textContent.includes('Løkke funnet')")
     assert page.locator('.ego-vehicle.signal-right').count() == 1
     assert 'til høyre' in page.locator('#situation-title').inner_text()
     assert page.locator('.traffic-vehicle svg').count() > 0
     if os.environ.get('BROWSER_DESKTOP_SCREENSHOT'):
         page.screenshot(path=os.environ['BROWSER_DESKTOP_SCREENSHOT'], full_page=True)
+
+
+def test_right_turn_does_not_report_opposing_lane_as_blocking(browser_page):
+    page, base, _ = browser_page
+    page.goto(base + '/?lat=62.7379&lon=7.1614&waiting=1&approach=0&destination=0')
+    page.wait_for_function("document.querySelector('#status').textContent.includes('Ingen konflikt')")
+    assert page.locator('#feasible').inner_text() == 'Ingen konflikt'
+    assert page.locator('#cars').inner_text() == '—'
+    assert page.locator('.car-pin').count() == 0
+    assert 'hindrer ikke' in page.locator('#entry-state').inner_text()
+    # Changing the destination must trigger a new search, now into the stream's lane.
+    page.select_option('#destination', '1')
+    page.wait_for_function("document.querySelector('#status').textContent.includes('Løkke funnet')")
+    assert int(page.locator('#cars').inner_text()) > 0
+    assert page.locator('.car-pin').count() > 0
+    page.select_option('#destination', '0')
+    page.wait_for_function("document.querySelector('#status').textContent.includes('Ingen konflikt')")
+    assert page.locator('#cars').inner_text() == '—'
+    assert page.locator('.car-pin').count() == 0

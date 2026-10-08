@@ -40,6 +40,8 @@
     remove(state.road); state.road = null;
     state.cars.forEach(remove); state.cars = [];
     state.routes = null; state.selected = null; state.response = null;
+    $('counter').textContent = '0 s';
+    if (state.junction) state.waiting?.setLatLng([state.junction.lat, state.junction.lon]);
     state.ego?.getElement()?.classList.remove('can-enter'); $('situation').classList.remove('can-enter');
     const caption = state.ego?.getElement()?.querySelector('.ego-caption');
     if (caption) caption.textContent = 'DU · venter på beregning';
@@ -54,7 +56,7 @@
     remove(state.waiting);
     if (state.junction) state.waiting = L.circleMarker([state.junction.lat, state.junction.lon], {
       radius: 5, color: '#b36516', fillColor: '#fff6df', fillOpacity: .8, weight: 2, dashArray: '3 3'
-    }).addTo(map).bindPopup('Konfliktpunkt. Din bil venter før krysset.');
+    }).addTo(map).bindPopup('Valgt kryss / utkjøring. Ved en konflikt viser markøren hvor kjørebanene møtes.');
   }
   function chosenWaiting() {
     if (state.mode === 'demo' || $('selection-mode').value === 'driveway') {
@@ -118,7 +120,7 @@
       const end = S.along(destination.coordinates, Math.min(55, outgoingLength * .8));
       const outPosition = S.offset(end.point, end.heading + 90, 2.2);
       const center = [state.junction.lat, state.junction.lon];
-      const desired = [egoPosition, center, outPosition];
+      const desired = state.selected?.conflict?.ego_path ? [egoPosition, ...state.selected.conflict.ego_path, outPosition] : [egoPosition, center, outPosition];
       L.polyline(desired, {color: '#eeac22', weight: 5, opacity: .9, dashArray: '7 8', className: 'intent-path', interactive: false}).addTo(state.situationLayer);
       L.marker(outPosition, {icon: L.divIcon({className: '', html: '<div class="intent-arrow" style="--heading:' + end.heading + 'deg"><svg viewBox="0 0 28 40" aria-hidden="true"><path d="M14 3L25 16H19V37H9V16H3Z"/></svg></div><span class="intent-caption">DIT VIL DU · ' + turn + '</span>', iconSize: [28, 40], iconAnchor: [14, 20]}), interactive: false})
         .addTo(state.situationLayer).bindTooltip('DIT VIL DU · ' + turn, {direction: 'right'});
@@ -127,7 +129,7 @@
     $('focus').disabled = false;
     const traffic = state.approaches.find(a => a.id === $('approach').value);
     $('situation-title').textContent = destination ? 'Du vil ' + turn.toLowerCase() + ' · du venter før krysset' : 'Du står her · velg hvor du vil kjøre';
-    $('situation-description').textContent = traffic ? 'Du viker for blå biler fra høyre (' + direction(traffic) + '). ' +
+    $('situation-description').textContent = traffic ? 'Trafikken kommer fra din høyre side (' + direction(traffic) + '). ' +
       (waiting.id === 'virtual' ? 'Utkjøringen er tegnet som en illustrasjon.' : 'Din innkjøring: ' + waiting.name + '.') : 'Ingen innkommende vei fra høyre. Velg en annen innkjøring.';
   }
   function focusSituation() {
@@ -222,9 +224,20 @@
     }
     const op = begin(); clearRoute(); status('Finner korteste løkke med kjøreretning og støttede svingeregler …');
     try {
-      const values = settings(), response = await request('/api/solve', {...values, session_id: state.session, approach_id: $('approach').value}, op.signal);
+      const waiting = chosenWaiting();
+      const values = settings(), response = await request('/api/solve', {...values, session_id: state.session, approach_id: $('approach').value,
+        destination_id: $('destination').value, waiting_approach_id: waiting.id === 'virtual' ? null : waiting.id,
+        virtual_origin_bearing: S.bearing([state.junction.lat, state.junction.lon], waiting.coordinates[0])}, op.signal);
       if (op.id !== state.operation) return;
       state.settings = values; state.routes = response.routes; state.response = response;
+      if (response.mode === 'no_conflict') {
+        paintSituation(); $('feasible').textContent = 'Ingen konflikt'; $('feasible').className = '';
+        const caption = state.ego?.getElement()?.querySelector('.ego-caption');
+        if (caption) caption.textContent = 'DU · ingen konflikt';
+        $('situation-title').textContent = 'Denne trafikkstrømmen hindrer ikke valgt manøver'; $('entry-state').textContent = 'Denne trafikken hindrer ikke manøveren din';
+        $('notes').textContent = response.message + ' Feltgeometrien er illustrert ut fra OSM-senterlinjer.';
+        status(response.message); if (fit) focusSituation(); return;
+      }
       showRoute(fit); status('Løkke funnet. Den stiplede rammen viser området søket gjelder.');
     } catch (err) { if (err.name !== 'AbortError') status(err.message, true); }
     finally { finish(op); }
@@ -258,6 +271,13 @@
     state.road = L.polyline(route.trajectory.map(p => [p.lat, p.lon]), {color: '#1478b4', weight: 6, opacity: .7, interactive: false}).addTo(map);
     paintSituation();
     if (fit) focusSituation();
+    if (route.conflict) {
+      const c = route.conflict;
+      L.polyline(c.traffic_path, {color: '#207cc5', weight: 4, opacity: .8, interactive: false}).addTo(state.situationLayer);
+      const at = c.traffic_path[Math.min(c.traffic_path.length - 1, Math.round(c.traffic_conflict_fraction * (c.traffic_path.length - 1)))];
+      state.waiting?.setLatLng(at);
+      $('situation-description').textContent = c.kind === 'merge' ? 'Blå biler fletter inn i samme utkjøring som deg.' : 'De blå bilenes kjørebane krysser din valgte kjørebane.';
+    }
     state.waiting?.bringToFront();
     $('sim-cars').value = a.minimum_cars; rebuildCars(); state.elapsed = 0; state.lastFrame = performance.now();
     for (const id of ['play', 'sim-cars', 'minimum', 'fit', 'export']) $(id).disabled = false;
@@ -268,6 +288,7 @@
       (route.control_points?.length ? route.control_points.length + ' kartlagte stopp-, vikeplikt- eller lyspunkter på løkken kan avbryte flyten. ' : '') +
       (network?.excluded_restrictions ? network.excluded_restrictions + ' komplekse/betingede svingeregler: berørte fra-veier er utelatt konservativt. ' : '') +
       (route.touches_boundary ? 'Ruten nærmer seg søkegrensen; prøv et større område. ' : '') +
+      (route.conflict ? (route.conflict.kind === 'merge' ? 'Konflikt: fletting inn i samme utkjøring. ' : 'Konflikt: kjørebanene krysser hverandre. ') + route.conflict.assumption + ' ' : '') +
       '*Færrest biler gjelder denne trafikkretningen; korteste distanse kan kreve flere biler enn raskeste løkke.';
     $('route-info').textContent = 'Fart fra OSM på ' + route.segments_with_tagged_speed + ' av ' + route.segment_count + ' segmenter. ' +
       (network ? network.restriction_count + ' støttede svingeregler i området. ' : '') +
@@ -294,6 +315,22 @@
     }
     for (const road of roads) { const li = document.createElement('li'); li.textContent = road.name + ' · ' + fmt(road.length, 0) + ' m · ' + fmt(road.speed, 0) + ' km/t' + (road.tagged ? '' : ' (antatt)'); $('road-list').append(li); }
   }
+  function trafficPose(route, t) {
+    const c = route.conflict;
+    if (c) {
+      const before = c.traffic_in_distance_m / (route.approach_speed_kmh / 3.6);
+      const after = c.traffic_out_distance_m / (route.departure_speed_kmh / 3.6);
+      const local = t > route.cycle_seconds - before ? t - route.cycle_seconds : t;
+      if (local >= -before && local <= after) {
+        const index = Math.max(0, Math.min(c.traffic_path.length - 1.001, (local + before) / (before + after) * (c.traffic_path.length - 1)));
+        const i = Math.floor(index), f = index - i, a = c.traffic_path[i], b = c.traffic_path[i + 1];
+        return {point: [a[0] + (b[0]-a[0])*f, a[1] + (b[1]-a[1])*f], heading: S.bearing(a, b)};
+      }
+    }
+    const location = interpolate(route.trajectory, t), ahead = interpolate(route.trajectory, (t + .05) % route.cycle_seconds);
+    const heading = S.bearing(location, ahead);
+    return {point: S.offset(location, heading + 90, 2.2), heading};
+  }
   function frame(now) {
     if (state.playing) state.elapsed += Math.max(0, Math.min(.25, (now - state.lastFrame) / 1000)) * Number($('simulation-speed').value);
     state.lastFrame = now; const route = state.selected;
@@ -303,14 +340,13 @@
         // When capped, sample cars around the entire loop, preserving true phases.
         const index = Math.floor(i * n / state.cars.length);
         const t = (state.elapsed + index * T / n) % T;
-        const location = interpolate(route.trajectory, t), ahead = interpolate(route.trajectory, (t + .05) % T);
-        const heading = S.bearing(location, ahead);
-        state.cars[i].setLatLng(S.offset(location, heading + 90, 2.2));
+        const pose = trafficPose(route, t), heading = pose.heading;
+        state.cars[i].setLatLng(pose.point);
         const body = state.cars[i].getElement()?.querySelector('.vehicle-body');
         if (body) body.style.transform = 'rotate(' + heading + 'deg)';
       }
       const a = route.analysis, passage = a.vehicle_length_m / (route.crossing_speed_kmh / 3.6);
-      const phase = state.elapsed % h, remaining = Math.max(0, h - phase);
+      const phase = ((state.elapsed - (route.conflict?.time_s || 0)) % h + h) % h, remaining = Math.max(0, h - phase);
       const occupied = phase < passage || h <= passage, acceptable = !occupied && remaining >= a.critical_clear_gap_s;
       const simulatedGap = Math.max(0, h - passage);
       $('entry-state').textContent = occupied ? 'En bil passerer punktet' : acceptable ? 'Stor nok luke til å kjøre ut nå' : 'Vent · luken er for liten';
@@ -370,7 +406,7 @@
     const valid = updateScenario(); paintApproaches();
     if (valid) solve(true); else { clearRoute(); status('Ingen trafikk fra høyre fra denne siden. Velg en annen side.', true); }
   });
-  $('destination').addEventListener('change', () => { paintSituation(); focusSituation(); });
+  $('destination').addEventListener('change', () => { paintSituation(); solve(true); });
   $('focus').addEventListener('click', focusSituation);
   for (const id of ['radius', 'selection-mode']) $(id).addEventListener('change', () => { if (state.point) loadIntersection(state.point); });
   $('demo').addEventListener('click', loadDemo); $('calculate').addEventListener('click', () => solve());

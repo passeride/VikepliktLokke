@@ -14,28 +14,29 @@ def test_full_selection_and_solve(client):
     selection = client.post('/api/intersection', json={'lat': 62.7379, 'lon': 7.1608}).json()
     assert len(selection['approaches']) == 3
     assert len(selection['approaches'][0]['coordinates']) >= 2
-    response = client.post('/api/solve', json={'session_id': selection['session_id'], 'approach_id': '0'})
+    response = client.post('/api/solve', json={'session_id': selection['session_id'], 'approach_id': '0', 'waiting_approach_id': '1', 'destination_id': '1'})
     assert response.status_code == 200
     routes = response.json()['routes']
-    assert routes['distance']['length_m'] < routes['time']['length_m']
-    assert routes['distance']['analysis']['minimum_cars'] > routes['time']['analysis']['minimum_cars']
+    assert routes['distance']['length_m'] <= routes['time']['length_m']
+    assert routes['distance']['analysis']['minimum_cars'] >= routes['time']['analysis']['minimum_cars']
+    assert all(r['conflict']['conflicts'] for r in routes.values())
 
 
 def test_driveway_api(client):
     selection = client.post('/api/intersection', json={'lat': 62.7379, 'lon': 7.1588, 'selection_mode': 'driveway'}).json()
-    response = client.post('/api/solve', json={'session_id': selection['session_id'], 'approach_id': '0'})
+    response = client.post('/api/solve', json={'session_id': selection['session_id'], 'approach_id': '0', 'destination_id': '0'})
     assert response.status_code == 200
 
 
 def test_unknown_session_and_direction(client):
-    assert client.post('/api/solve', json={'session_id': 'missing', 'approach_id': '0'}).status_code == 404
+    assert client.post('/api/solve', json={'session_id': 'missing', 'approach_id': '0', 'waiting_approach_id': '1', 'destination_id': '1'}).status_code == 404
     s = client.post('/api/intersection', json={'lat': 62.7379, 'lon': 7.1608}).json()
-    assert client.post('/api/solve', json={'session_id': s['session_id'], 'approach_id': 'bad'}).status_code == 422
+    assert client.post('/api/solve', json={'session_id': s['session_id'], 'approach_id': 'bad', 'waiting_approach_id': '1', 'destination_id': '1'}).status_code == 422
 
 
 def test_no_loop_has_useful_error(client):
     s = client.post('/api/intersection', json={'lat': 62.7379, 'lon': 7.1608}).json()
-    r = client.post('/api/solve', json={'session_id': s['session_id'], 'approach_id': '2'})
+    r = client.post('/api/solve', json={'session_id': s['session_id'], 'approach_id': '2', 'waiting_approach_id': '0', 'destination_id': '0'})
     assert r.status_code == 422 and 'søkeområdet' in r.json()['detail']
 
 

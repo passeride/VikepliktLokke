@@ -1,9 +1,10 @@
 """Deterministic integration server; external OSM calls replaced only in tests."""
 from app import main
 from tests.conftest import street_graph
+from tests.test_conflicts import t_junction
 import uvicorn
 
-main.load_roads = lambda *_: street_graph()
+main.load_roads = lambda lat, lon, radius: t_junction() if lon > 7.1611 else street_graph()
 main.search_place = lambda q: [{'name': 'Teststed: ' + q, 'lat': 62.7379, 'lon': 7.1608}]
 if __name__ == '__main__':
     import sys

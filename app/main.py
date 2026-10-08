@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field
 
 from .engine import add_analysis, allowed_turn, demo_route, find_shortest_loop, speed_kmh
 from .roads import load_roads, select_point
+from .conflicts import paths_conflict
+import math
 
 STATIC = Path(__file__).parent / 'static'
 app = FastAPI(title='VikepliktLokke', version='0.2.0')
@@ -48,6 +50,9 @@ class PointRequest(BaseModel):
 class SolveRequest(Settings):
     session_id: str
     approach_id: str
+    destination_id: str
+    waiting_approach_id: str | None = None
+    virtual_origin_bearing: float = Field(0, ge=0, lt=360)
 
 
 @app.get('/')
@@ -150,7 +155,10 @@ def intersection(request: PointRequest):
                 'excluded_restrictions': graph.graph['excluded_restrictions'],
                 'excluded_ways': graph.graph['excluded_ways'], 'bounds': graph.graph['bounds']}
     with CACHE_LOCK:
-        CACHE[session_id] = {'graph': graph, 'selection': selection, 'metadata': metadata}
+        CACHE[session_id] = {'graph': graph, 'selection': selection, 'metadata': metadata,
+                             'approaches': approaches, 'departures': departures,
+                             'departure_edges': departure_edges, 'junction': junction,
+                             'selection_mode': request.selection_mode}
         while len(CACHE) > MAX_SESSIONS:
             CACHE.popitem(last=False)
     return {'session_id': session_id,
@@ -171,13 +179,56 @@ def solve(request: SolveRequest):
     if selected is None:
         raise HTTPException(422, 'Ugyldig trafikkretning.')
     graph = entry['graph']
+    destination = next((d for d in entry['departures'] if d['id'] == request.destination_id), None)
+    if destination is None:
+        raise HTTPException(422, 'Ugyldig ønsket utkjøring.')
+    center = [graph.nodes[entry['junction']]['y'], graph.nodes[entry['junction']]['x']]
+    if entry['selection_mode'] == 'driveway':
+        bearing = math.radians(request.virtual_origin_bearing)
+        waiting_coords = [[center[0] + 75 * math.cos(bearing) / 111111,
+                           center[1] + 75 * math.sin(bearing) / (111111 * math.cos(math.radians(center[0])))], center]
+    else:
+        waiting = next((a for a in entry['approaches'] if a['id'] == request.waiting_approach_id), None)
+        if waiting is None or waiting['id'] == request.approach_id:
+            raise HTTPException(422, 'Velg innkjøringen din og en annen trafikkretning.')
+        if request.destination_id not in waiting['allowed_departures']:
+            raise HTTPException(422, 'Den ønskede svingen er ikke tilgjengelig for innkjøringen din.')
+        waiting_coords = waiting['coordinates']
+    traffic = next(a for a in entry['approaches'] if a['id'] == request.approach_id)
+    def heading(coords):
+        a, b = coords[-2:]
+        return math.degrees(math.atan2((b[1]-a[1])*math.cos(math.radians(center[0])), b[0]-a[0]))
+    angle = (heading(traffic['coordinates']) + 180 - heading(waiting_coords) + 180) % 360 - 180
+    if not 20 < angle < 160:
+        raise HTTPException(422, 'Trafikken må komme fra din høyre side i denne modellen.')
+    conflicts = {}
+    for departure in entry['departures']:
+        edge = entry['departure_edges'][departure['id']]
+        if not allowed_turn(graph, selected, edge):
+            continue
+        conflict = paths_conflict(waiting_coords, destination['coordinates'], traffic['coordinates'],
+                                  departure['coordinates'], center, same_exit=departure['id'] == request.destination_id)
+        if conflict['conflicts']:
+            conflicts[edge] = {**conflict, 'traffic_departure_id': departure['id'], 'traffic_departure_name': departure['name']}
+    if not conflicts:
+        return {'mode': 'no_conflict', 'routes': {}, 'network': entry['metadata'],
+                'message': 'Ingen konflikt: trafikkens tilgjengelige kjørebaner krysser ikke din og fletter ikke inn i samme utkjøring. Denne trafikkstrømmen blokkerer ikke manøveren din i modellen.'}
     routes = {}
     for optimize in ('distance', 'time'):
         try:
             result = find_shortest_loop(graph, *selected,
-                                       fallback_speed_kmh=request.fallback_speed_kmh, optimize=optimize)
+                                       fallback_speed_kmh=request.fallback_speed_kmh, optimize=optimize,
+                                       allowed_departures=set(conflicts))
         except (nx.NetworkXNoPath, nx.NodeNotFound):
             continue
+        result['conflict'] = conflicts[tuple(result['departure_edge'])]
+        result['approach_speed_kmh'] = result['crossing_speed_kmh']
+        c = result['conflict']
+        duration_in = c['traffic_in_distance_m'] / (result['approach_speed_kmh'] / 3.6)
+        duration_out = c['traffic_out_distance_m'] / (result['departure_speed_kmh'] / 3.6)
+        c['time_s'] = c['traffic_conflict_fraction'] * (duration_in + duration_out) - duration_in
+        if c['time_s'] >= 0:
+            result['crossing_speed_kmh'] = result['departure_speed_kmh']
         routes[optimize] = add_analysis(result, request.model_dump())
     if not routes:
         raise HTTPException(422, 'Ingen lukket løkke for denne retningen innen søkeområdet og de støttede svingereglene. Velg en annen retning eller øk søkeradius og hent punktet igjen.')

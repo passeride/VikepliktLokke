@@ -142,6 +142,7 @@ def find_shortest_loop(
     incoming_key: Any,
     fallback_speed_kmh: float = 50.0,
     optimize: str = "distance",
+    allowed_departures: set[tuple] | None = None,
 ) -> dict[str, Any]:
     """Dijkstra over directed edge states, including the turn across the lap seam.
 
@@ -177,6 +178,8 @@ def find_shortest_loop(
             break
         for _, target, key in graph.out_edges(edge[1], keys=True):
             nxt = (edge[1], target, key)
+            if edge == start and allowed_departures is not None and nxt not in allowed_departures:
+                continue
             if nxt == start or nxt not in records or not allowed_turn(graph, edge, nxt):
                 continue
             candidate = cost + records[nxt][2]
@@ -205,6 +208,8 @@ def find_shortest_loop(
         "segments_with_tagged_speed": sum(item[3]["speed_from_osm"] for item in legs),
         "segment_count": len(legs),
         "trajectory": _route_as_trajectory(graph, legs),
+        "departure_edge": list(path_edges[0]),
+        "departure_speed_kmh": legs[0][3]["speed_kmh"],
         "segments": [{"name": attrs.get("name", "Uten veinavn"), **details}
                      for _, _, attrs, details in legs],
         "control_points": [{"lat": graph.nodes[n]["y"], "lon": graph.nodes[n]["x"],
