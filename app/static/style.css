@@ -1,0 +1,33 @@
+:root{font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#182633;background:#f2f5f8;font-synthesis:none}
+*{box-sizing:border-box}
+body{margin:0}
+header{background:#0d2939;color:white;padding:14px 23px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+header strong{display:block;font-size:20px}header span{font-size:12px;color:#b2c7d5}
+header .tag{font-size:10px;border:1px solid #638090;padding:6px 9px;border-radius:10px;letter-spacing:.06em}
+main{display:grid;grid-template-columns:345px minmax(0,1fr);height:calc(100vh - 67px)}
+.panel{padding:23px;background:white;border-right:1px solid #d9e2e7;overflow-y:auto}
+h1{font-size:22px;margin:0 0 10px}h2{font-size:16px;margin:0 0 16px}
+p{font-size:13px;line-height:1.6;color:#526474}
+button,select{font:inherit;border-radius:8px;border:1px solid #cbd8e1;background:white;padding:10px 12px;cursor:pointer}
+button:disabled,select:disabled{opacity:.48;cursor:not-allowed}
+button.primary{background:#1675ab;color:white;border:0;font-weight:600;width:100%}
+#calculate{width:100%;margin-top:14px;font-weight:600}
+.panel>label{display:block;margin:12px 0 5px;font-size:12px;font-weight:600}
+.panel>select{width:100%;font-size:13px}
+.divider{border-top:1px solid #e6ecef;margin:22px 0}
+.control{margin:13px 0}
+.control label{font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:space-between}
+.control output{color:#146b96}
+.control input{width:100%;accent-color:#1675ab}
+#status{background:#edf3f7;border-radius:8px;padding:11px;color:#28485d;min-height:42px}
+.workspace{min-height:0;display:flex;flex-direction:column}
+#map{flex:1;min-height:260px;background:#e1e7e9}
+.results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:12px}
+.stat{background:white;border:1px solid #dce5e8;border-radius:10px;padding:13px}
+.stat small{display:block;color:#526474;font-size:11px}.stat strong{display:block;font-size:21px;margin-top:5px}
+.toolbar{padding:0 12px 12px;display:flex;gap:15px;align-items:center}
+.toolbar label,.toolbar span{font-size:12px;color:#556675}.toolbar select{padding:5px}
+#notes{padding:10px 14px;background:#e8eef3;border-top:1px solid #d2dce4;font-size:12px;color:#506476}
+.car-pin{width:12px;height:21px;background:#1f7acc;border:2px solid white;border-radius:5px;box-shadow:0 1px 5px #174160aa}
+.warning{color:#a44815}
+@media(max-width:850px){main{display:flex;height:auto;flex-direction:column}.panel{order:2}.workspace{order:1}#map{height:370px;flex:auto}.results{grid-template-columns:repeat(2,minmax(0,1fr))}header .tag{display:none}}

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VikepliktLokke · Trafikklukesimulator</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <header>
+    <div><strong>VikepliktLokke</strong><span>En trafikkmatematisk POC</span></div>
+    <span class="tag">IDEALISERT MODELL · IKKE KJØRERÅD</span>
+  </header>
+  <main>
+    <aside class="panel">
+      <h1>Når slipper du aldri ut?</h1>
+      <p>Velg et kryss på kartet. Deretter velger du hvilken innkommende vei som skal ha prioritert trafikk. Systemet søker etter en lukket kjørerute.</p>
+      <button id="demo" class="primary">Vis syntetisk demo</button>
+      <div class="divider"></div>
+      <label for="approach">Innkommende hovedvei</label>
+      <select id="approach" disabled><option>Velg først et kryss på kartet</option></select>
+      <label for="radius">Søkeradius rundt krysset</label>
+      <select id="radius">
+        <option value="600">600 m</option>
+        <option value="1200" selected>1 200 m</option>
+        <option value="2000">2 000 m</option>
+        <option value="3000">3 000 m</option>
+      </select>
+      <label for="mode">Optimaliser sløyfen</label>
+      <select id="mode">
+        <option value="distance">Korteste veilengde</option>
+        <option value="time">Korteste rundetid</option>
+      </select>
+      <div class="divider"></div>
+      <h2>Parametere</h2>
+      <div class="control"><label for="speed">Fart ved manglende OSM-data <output id="speed-value">50 km/t</output></label><input type="range" id="speed" min="20" max="110" value="50" step="10"></div>
+      <div class="control"><label for="critical">Nødvendig fri tidsluke <output id="critical-value">6,0 s</output></label><input type="range" id="critical" min="3" max="12" value="6" step="0.5"></div>
+      <div class="control"><label for="follow">Minste fri følgeavstand <output id="follow-value">2,0 s</output></label><input type="range" id="follow" min="1" max="5" value="2" step="0.5"></div>
+      <div class="control"><label for="length">Billengde <output id="length-value">4,5 m</output></label><input type="range" id="length" min="3" max="12" value="4.5" step="0.5"></div>
+      <div class="control"><label for="clearance">Min. støtfangeravstand <output id="clearance-value">2 m</output></label><input type="range" id="clearance" min="0" max="10" value="2" step="1"></div>
+      <button id="calculate" disabled>Beregn valgt sløyfe</button>
+      <p id="status" role="status" aria-live="polite">Start med demo, eller klikk i et veikryss.</p>
+    </aside>
+    <section class="workspace">
+      <div id="map" role="application" aria-label="Veikart for å velge kryss"></div>
+      <div class="results">
+        <div class="stat"><small>Minste antall biler</small><strong id="cars">—</strong></div>
+        <div class="stat"><small>Sløyfens lengde</small><strong id="distance">—</strong></div>
+        <div class="stat"><small>Rundetid</small><strong id="lap">—</strong></div>
+        <div class="stat"><small>Fri luke ved krysset</small><strong id="gap">—</strong></div>
+        <div class="stat"><small>Maks. biler med avstandskrav</small><strong id="maxcars">—</strong></div>
+        <div class="stat"><small>Modellresultat</small><strong id="feasible">—</strong></div>
+      </div>
+      <div class="toolbar">
+        <button id="play" disabled>Pause</button>
+        <label for="simulation-speed">Animasjon <select id="simulation-speed"><option value="1">1×</option><option value="5" selected>5×</option><option value="20">20×</option><option value="60">60×</option></select></label>
+        <span id="counter">0 s</span>
+      </div>
+      <div id="notes">Ingen simulering valgt.</div>
+    </section>
+  </main>
+</body>
+</html>
