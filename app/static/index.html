@@ -1,65 +1,64 @@
 <!doctype html>
-<html lang="no">
+<html lang="nb">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>VikepliktLokke · Trafikklukesimulator</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <title>VikepliktLokke · Finn trafikkløkken</title>
+  <link rel="stylesheet" href="/static/vendor/leaflet.css">
   <link rel="stylesheet" href="/static/style.css">
-  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script defer src="/static/vendor/leaflet.js"></script>
   <script defer src="/static/app.js"></script>
 </head>
 <body>
-  <header>
-    <div><strong>VikepliktLokke</strong><span>En trafikkmatematisk POC</span></div>
-    <span class="tag">IDEALISERT MODELL · IKKE KJØRERÅD</span>
-  </header>
+  <header><div><strong>VikepliktLokke</strong><span>Utforsk veier, løkker og lukene mellom bilene</span></div><span class="tag">IDEALISERT TRAFIKKMODELL</span></header>
   <main>
     <aside class="panel">
-      <h1>Når slipper du aldri ut?</h1>
-      <p>Velg et kryss på kartet. Deretter velger du hvilken innkommende vei som skal ha prioritert trafikk. Systemet søker etter en lukket kjørerute.</p>
-      <button id="demo" class="primary">Vis syntetisk demo</button>
+      <h1>Hvor mange biler stenger luken?</h1>
+      <p>Finn et sted, klikk på krysset eller utkjøringen, og velg retningen trafikken kommer fra. Se den korteste løkken og bilene som sirkulerer.</p>
+      <form id="search-form"><label for="search">Finn sted eller koordinater</label><div class="search-row"><input id="search" placeholder="Molde, eller 62.7379, 7.1608" required minlength="2" maxlength="200"><button type="submit" id="search-button">Søk</button></div></form>
+      <div id="search-results" aria-live="polite"></div>
+      <div class="row"><button id="locate">Min posisjon</button><button id="demo">Syntetisk demo</button></div>
       <div class="divider"></div>
-      <label for="approach">Innkommende hovedvei</label>
-      <select id="approach" disabled><option>Velg først et kryss på kartet</option></select>
-      <label for="radius">Søkeradius rundt krysset</label>
-      <select id="radius">
-        <option value="600">600 m</option>
-        <option value="1200" selected>1 200 m</option>
-        <option value="2000">2 000 m</option>
-        <option value="3000">3 000 m</option>
-      </select>
-      <label for="mode">Optimaliser sløyfen</label>
-      <select id="mode">
-        <option value="distance">Korteste veilengde</option>
-        <option value="time">Korteste rundetid</option>
-      </select>
+      <h2>1 · Velg punkt på kartet</h2>
+      <label for="selection-mode">Punktet representerer</label>
+      <select id="selection-mode"><option value="junction">Et veikryss</option><option value="driveway">En utkjøring langs veien</option></select>
+      <p class="hint">Utkjøring kan brukes selv om selve avkjørselen ikke er kartlagt.</p>
+      <label for="radius">Søkeområde (omtrent fra valgt punkt)</label>
+      <select id="radius"><option value="600">600 m</option><option value="1200" selected>1 200 m</option><option value="2000">2 000 m</option><option value="3000">3 000 m</option><option value="5000">5 000 m</option></select>
+      <h2 class="step">2 · Velg trafikkstrømmen</h2>
+      <label for="waiting-approach">Hvor står bilen som har vikeplikt?</label>
+      <select id="waiting-approach" disabled><option value="">Ikke angitt / utenfor kartlagt vei</option></select>
+      <label for="approach">Trafikken med forkjørsrett kommer fra</label>
+      <select id="approach" disabled><option>Velg et punkt først</option></select>
+      <p class="hint">Numrene finnes også på kartet. Du bekrefter selv hvilken vei som har forkjørsrett.</p>
+      <label for="mode">Velg løkke</label><select id="mode"><option value="distance">Korteste veilengde</option><option value="time">Korteste rundetid / færrest biler*</option></select>
       <div class="divider"></div>
-      <h2>Parametere</h2>
-      <div class="control"><label for="speed">Fart ved manglende OSM-data <output id="speed-value">50 km/t</output></label><input type="range" id="speed" min="20" max="110" value="50" step="10"></div>
-      <div class="control"><label for="critical">Nødvendig fri tidsluke <output id="critical-value">6,0 s</output></label><input type="range" id="critical" min="3" max="12" value="6" step="0.5"></div>
-      <div class="control"><label for="follow">Minste fri følgeavstand <output id="follow-value">2,0 s</output></label><input type="range" id="follow" min="1" max="5" value="2" step="0.5"></div>
-      <div class="control"><label for="length">Billengde <output id="length-value">4,5 m</output></label><input type="range" id="length" min="3" max="12" value="4.5" step="0.5"></div>
-      <div class="control"><label for="clearance">Min. støtfangeravstand <output id="clearance-value">2 m</output></label><input type="range" id="clearance" min="0" max="10" value="2" step="1"></div>
-      <button id="calculate" disabled>Beregn valgt sløyfe</button>
-      <p id="status" role="status" aria-live="polite">Start med demo, eller klikk i et veikryss.</p>
+      <details open><summary>Modellens parametere</summary>
+        <div class="control"><label for="speed">Fart når OSM mangler grense <output id="speed-value">50 km/t</output></label><input type="range" id="speed" min="5" max="130" value="50" step="5"></div>
+        <div class="control"><label for="critical">Nødvendig fri tidsluke <output id="critical-value">6 s</output></label><input type="range" id="critical" min="1" max="20" value="6" step="0.5"></div>
+        <div class="control"><label for="follow">Minste fri følgeavstand <output id="follow-value">2 s</output></label><input type="range" id="follow" min="0.5" max="6" value="2" step="0.5"></div>
+        <div class="control"><label for="length">Billengde <output id="length-value">4,5 m</output></label><input type="range" id="length" min="3" max="12" value="4.5" step="0.5"></div>
+        <div class="control"><label for="clearance">Min. støtfangeravstand <output id="clearance-value">2 m</output></label><input type="range" id="clearance" min="0" max="10" value="2" step="1"></div>
+      </details>
+      <button id="calculate" class="primary" disabled>Beregn valgt løkke</button>
+      <p id="status" role="status" aria-live="polite">Naviger i kartet eller prøv den syntetiske demoen.</p>
     </aside>
     <section class="workspace">
-      <div id="map" role="application" aria-label="Veikart for å velge kryss"></div>
+      <div class="map-wrap"><div id="map" aria-label="Veikart: klikk for å velge punkt"></div><button id="fit" class="map-button" disabled>Vis hele løkken</button><div id="map-legend">● Oransje: valgt punkt · Blå: trafikk / løkke · Lilla: vikepliktig vei</div></div>
       <div class="results">
-        <div class="stat"><small>Minste antall biler</small><strong id="cars">—</strong></div>
-        <div class="stat"><small>Sløyfens lengde</small><strong id="distance">—</strong></div>
+        <div class="stat accent"><small>Minste antall biler</small><strong id="cars">—</strong></div>
+        <div class="stat"><small>Korteste løkke</small><strong id="distance">—</strong></div>
         <div class="stat"><small>Rundetid</small><strong id="lap">—</strong></div>
-        <div class="stat"><small>Fri luke ved krysset</small><strong id="gap">—</strong></div>
-        <div class="stat"><small>Maks. biler med avstandskrav</small><strong id="maxcars">—</strong></div>
-        <div class="stat"><small>Modellresultat</small><strong id="feasible">—</strong></div>
+        <div class="stat"><small>Fri luke med minimum biler</small><strong id="gap">—</strong></div>
+        <div class="stat"><small>Fri bilavstand ved punktet</small><strong id="spacing">—</strong></div>
+        <div class="stat"><small>Innen valgte avstandskrav?</small><strong id="feasible">—</strong><small id="maxcars"></small></div>
       </div>
-      <div class="toolbar">
-        <button id="play" disabled>Pause</button>
-        <label for="simulation-speed">Animasjon <select id="simulation-speed"><option value="1">1×</option><option value="5" selected>5×</option><option value="20">20×</option><option value="60">60×</option></select></label>
-        <span id="counter">0 s</span>
+      <div class="simulation">
+        <div class="toolbar"><button id="play" disabled>Pause</button><label for="simulation-speed">Tempo <select id="simulation-speed"><option value="1">1×</option><option value="5" selected>5×</option><option value="20">20×</option><option value="60">60×</option></select></label><label for="sim-cars">Prøv bilantall <input id="sim-cars" type="number" min="1" max="10000" disabled></label><button id="minimum" disabled>Bruk minimum</button><span id="counter">0 s</span></div>
+        <div class="gap-display"><strong id="entry-state">Velg en løkke for å se tidslukene</strong><span id="sim-gap"></span><div class="gap-track"><div id="gap-fill"></div></div></div>
       </div>
-      <div id="notes">Ingen simulering valgt.</div>
+      <details id="route-details"><summary>Rute, sammenligning og datagrunnlag</summary><div id="comparison"></div><p id="route-info"></p><ol id="road-list"></ol><div class="row"><button id="export" disabled>Last ned GeoJSON</button><button id="share" disabled>Kopier lenke til punktet</button></div></details>
+      <p id="notes">Matematisk modell: like biler og jevne ankomsttider. Faktisk trafikk kan gi andre luker.</p>
     </section>
   </main>
 </body>

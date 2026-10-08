@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import math
 import re
+import heapq
+from itertools import count
 from typing import Any
 
 import networkx as nx
@@ -19,7 +21,7 @@ def speed_kmh(value: Any, fallback: float) -> tuple[float, bool]:
     if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
         return float(value), True
     if isinstance(value, str):
-        match = re.search(r"(?<!\d)(\d+(?:\.\d+)?)\s*(mph|km/h|kph)?", value.lower())
+        match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(mph|km/h|kph)?\s*", value.lower())
         if match:
             speed = float(match.group(1)) * (1.609344 if match.group(2) == "mph" else 1)
             if 1 <= speed <= 160:
@@ -74,6 +76,10 @@ def traffic_requirements(
         "min_bumper_clearance_m": min_bumper_clearance_m,
         "crossing_speed_kmh": round(crossing_speed_kmh, 2),
         "cycle_seconds": round(cycle_seconds, 2),
+        "front_spacing_at_crossing_m": round(headway_s * cross_mps, 2),
+        "bumper_spacing_at_crossing_m": round(headway_s * cross_mps - vehicle_length_m, 2),
+        "clear_gap_with_one_fewer_car_s": (round(cycle_seconds / (minimum_cars - 1) - vehicle_passage_s, 3)
+                                           if minimum_cars > 1 else None),
         "assumptions": [
             "All cars complete identical laps and maintain uniformly staggered arrival times.",
             "Vehicle lengths are equal; weather, reaction-time variation and merging are ignored.",
@@ -137,46 +143,102 @@ def find_shortest_loop(
     fallback_speed_kmh: float = 50.0,
     optimize: str = "distance",
 ) -> dict[str, Any]:
-    """Return directed closed walk arriving on incoming_u -> junction_v.
+    """Dijkstra over directed edge states, including the turn across the lap seam.
 
-    Forbid an immediate reversal on the incoming road; note that real turn
-    restrictions/signals and right-of-way at other intersections are NOT modeled.
+    No reversal on the same road anywhere. Node-via no/only restrictions are
+    enforced by allowed_turn; unsupported restriction ways are excluded at load.
+    The optimum is within the downloaded graph, not a global road-network claim.
     """
     if optimize not in ("distance", "time"):
         raise ValueError("optimize must be 'distance' or 'time'")
-    selected_attrs = graph[incoming_u][junction_v][incoming_key]
-    selected = edge_details(selected_attrs, fallback_speed_kmh)
-    simplified = nx.DiGraph()
+    selected = edge_details(graph[incoming_u][junction_v][incoming_key], fallback_speed_kmh)
+    records = {}
     for u, v, key, attrs in graph.edges(keys=True, data=True):
         try:
             details = edge_details(attrs, fallback_speed_kmh)
         except (TypeError, ValueError):
             continue
         weight = details["length_m"] if optimize == "distance" else details["time_s"]
-        if not simplified.has_edge(u, v) or weight < simplified[u][v]["weight"]:
-            simplified.add_edge(u, v, key=key, weight=weight, details=details, attrs=attrs)
-    # A single reverse movement at the junction is not a valid circuit.
-    if simplified.has_edge(junction_v, incoming_u):
-        simplified.remove_edge(junction_v, incoming_u)
-    path = nx.shortest_path(simplified, junction_v, incoming_u, weight="weight")
-    legs = []
-    for u, v in zip(path, path[1:]):
-        record = simplified[u][v]
-        legs.append((u, v, record["attrs"], record["details"]))
-    legs.append((incoming_u, junction_v, selected_attrs, selected))
+        records[u, v, key] = (attrs, details, weight)
+    start = (incoming_u, junction_v, incoming_key)
+    serial = count()
+    queue = [(0.0, next(serial), start)]
+    costs = {start: 0.0}
+    previous = {}
+    last = None
+    while queue:
+        cost, _, edge = heapq.heappop(queue)
+        if cost != costs[edge]:
+            continue
+        # Complete only when the selected incoming edge can be traversed again.
+        # Its next outgoing turn is already checked by the initial expansion.
+        if edge[1] == incoming_u and allowed_turn(graph, edge, start):
+            last = edge
+            break
+        for _, target, key in graph.out_edges(edge[1], keys=True):
+            nxt = (edge[1], target, key)
+            if nxt == start or nxt not in records or not allowed_turn(graph, edge, nxt):
+                continue
+            candidate = cost + records[nxt][2]
+            if candidate < costs.get(nxt, math.inf):
+                costs[nxt] = candidate
+                previous[nxt] = edge
+                heapq.heappush(queue, (candidate, next(serial), nxt))
+    if last is None:
+        raise nx.NetworkXNoPath("No circuit respecting the supported turn rules")
+    path_edges = []
+    while last != start:
+        path_edges.append(last)
+        last = previous[last]
+    path_edges.reverse()
+    path_edges.append(start)
+    legs = [(u, v, records[u, v, key][0], records[u, v, key][1]) for u, v, key in path_edges]
 
     total_length = sum(item[3]["length_m"] for item in legs)
     total_time = sum(item[3]["time_s"] for item in legs)
     return {
         "optimization": optimize,
         "length_m": round(total_length, 2),
-        "cycle_seconds": round(total_time, 3),
+        "cycle_seconds": total_time,
         "crossing_speed_kmh": selected["speed_kmh"],
         "minimum_speed_kmh": min(item[3]["speed_kmh"] for item in legs),
         "segments_with_tagged_speed": sum(item[3]["speed_from_osm"] for item in legs),
         "segment_count": len(legs),
         "trajectory": _route_as_trajectory(graph, legs),
+        "segments": [{"name": attrs.get("name", "Uten veinavn"), **details}
+                     for _, _, attrs, details in legs],
+        "control_points": [{"lat": graph.nodes[n]["y"], "lon": graph.nodes[n]["x"],
+                            "type": graph.nodes[n]["highway"]}
+                           for n in dict.fromkeys(v for _, v, _, _ in legs)
+                           if graph.nodes[n].get("highway") in ("traffic_signals", "stop", "give_way")],
+        "touches_boundary": any(graph.nodes[n].get("boundary", False)
+                                for edge in path_edges for n in edge[:2]),
     }
+
+
+def way_ids(attrs: dict) -> set:
+    value = attrs.get("osmid")
+    return set(value if isinstance(value, (list, tuple, set)) else [value])
+
+
+def allowed_turn(graph: nx.MultiDiGraph, incoming: tuple, outgoing: tuple) -> bool:
+    u, v, key = incoming
+    _, w, next_key = outgoing
+    before, after = graph[u][v][key], graph[v][w][next_key]
+    # Different parallel roads between two junctions can form a real circuit.
+    if w == u and way_ids(before) & way_ids(after):
+        return False
+    for rule in graph.graph.get("turn_restrictions", {}).get(v, []):
+        if rule["from"] not in way_ids(before):
+            continue
+        matches = bool(set(rule["to"]) & way_ids(after))
+        if rule["kind"].startswith("only_") and not matches:
+            return False
+        if rule["kind"].startswith("no_") and matches:
+            # no_u_turn prohibits reversal, not continuing along the same way.
+            if rule["kind"] != "no_u_turn" or w == u:
+                return False
+    return True
 
 
 def add_analysis(route: dict, settings: dict) -> dict:
@@ -218,7 +280,7 @@ def demo_route(speed: float) -> dict:
     return {
         "optimization": "distance",
         "length_m": round(length, 2),
-        "cycle_seconds": round(elapsed, 3),
+        "cycle_seconds": elapsed,
         "crossing_speed_kmh": speed,
         "minimum_speed_kmh": speed,
         "segments_with_tagged_speed": 0,

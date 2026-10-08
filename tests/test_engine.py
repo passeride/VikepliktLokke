@@ -74,3 +74,15 @@ def test_invalid_input():
         traffic_requirements(0, 50, 50)
     with pytest.raises(ValueError):
         traffic_requirements(60, 50, 50, vehicle_length_m=-1)
+
+
+def test_speed_parser_does_not_treat_conditional_text_as_a_numeric_limit():
+    assert speed_kmh('50 @ (Mo-Fr)', 30) == (30, False)
+
+
+def test_spacing_and_minimum_proof():
+    model = traffic_requirements(72, 50, 30)
+    v = 50 / 3.6
+    assert model['bumper_spacing_at_crossing_m'] == pytest.approx(72 / model['minimum_cars'] * v - 4.5, abs=.01)
+    assert model['clear_gap_s'] < model['critical_clear_gap_s']
+    assert model['clear_gap_with_one_fewer_car_s'] >= model['critical_clear_gap_s']
