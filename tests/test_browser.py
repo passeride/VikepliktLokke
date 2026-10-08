@@ -60,8 +60,8 @@ def choose_junction(page, base):
 def test_map_selection_routes_simulation_export(browser_page):
     page, base, _ = browser_page
     choose_junction(page, base)
-    assert page.locator('#approach option').count() == 2
-    assert page.locator('.approach-pin').count() == 2
+    assert page.locator('#approach option').count() == 3
+    assert page.locator('.approach-pin').count() == 3
     shortest = int(page.locator('#cars').inner_text())
     page.select_option('#mode', 'time')
     fastest = int(page.locator('#cars').inner_text())
@@ -87,12 +87,12 @@ def test_map_selection_routes_simulation_export(browser_page):
 def test_failed_direction_clears_previous_result(browser_page):
     page, base, _ = browser_page
     choose_junction(page, base)
-    page.select_option('#approach', '1')
+    page.select_option('#waiting-approach', '0')
     page.wait_for_function("document.querySelector('#status').textContent.includes('Ingen lukket løkke')")
     assert page.locator('#cars').inner_text() == '—'
     assert page.locator('.car-pin').count() == 0
     assert page.locator('#export').is_disabled()
-    page.select_option('#approach', '0')
+    page.select_option('#waiting-approach', '1')
     page.wait_for_function("document.querySelector('#status').textContent.includes('Løkke funnet')")
 
 
@@ -115,3 +115,29 @@ def test_search_driveway_and_mobile(browser_page):
     if os.environ.get('BROWSER_SCREENSHOT'):
         page.screenshot(path=os.environ['BROWSER_SCREENSHOT'], full_page=True)
     page.set_viewport_size({'width': 1440, 'height': 1000})
+
+
+def test_ego_position_right_hand_priority_and_turn_signal(browser_page):
+    page, base, _ = browser_page
+    choose_junction(page, base)
+    # Heading south from the northern approach: traffic from west is on the right.
+    assert page.locator('#waiting-approach').input_value() == '1'
+    assert page.locator('#approach').input_value() == '0'
+    assert page.locator('#approach option[value="1"]').is_disabled()
+    assert page.locator('#approach option[value="2"]').is_disabled()
+    ego = page.locator('.ego-vehicle').locator('..')
+    latitude = float(ego.get_attribute('data-lat'))
+    longitude = float(ego.get_attribute('data-lon'))
+    assert latitude > 62.7379 + .0001  # Car stands north of, not in, the junction.
+    assert longitude < 7.1608  # Right-hand lane for a southbound vehicle.
+    assert page.locator('.yield-sign').count() == 1
+    assert page.locator('.intent-arrow').count() == 1
+    options = page.locator('#destination option')
+    left = next((o.get_attribute('value') for o in options.all() if o.inner_text().startswith('Til høyre')), None)
+    assert left is not None
+    page.select_option('#destination', left)
+    assert page.locator('.ego-vehicle.signal-right').count() == 1
+    assert 'til høyre' in page.locator('#situation-title').inner_text()
+    assert page.locator('.traffic-vehicle svg').count() > 0
+    if os.environ.get('BROWSER_DESKTOP_SCREENSHOT'):
+        page.screenshot(path=os.environ['BROWSER_DESKTOP_SCREENSHOT'], full_page=True)

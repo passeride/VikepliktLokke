@@ -19,6 +19,8 @@ test: install
 check: test
 	.venv/bin/python -m compileall -q app
 	node --check app/static/app.js
+	node --check app/static/scene.js
+	node --test tests/scene.test.cjs
 
 browser-test: install
 	.venv/bin/python -m pip install playwright

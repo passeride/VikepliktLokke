@@ -11,7 +11,7 @@ def street_data():
     elements[2]['tags'] = {'highway': 'traffic_signals'}
     for id_, refs, name, speed, oneway in [
         (10, [1, 2], 'Hovedveien', '50', 'yes'),
-        (20, [2, 3, 4, 1], 'Ytre løkke', '80', 'yes'),
+        (20, [2, 3, 4, 1], 'Ytre løkke', '80', 'no'),
         (30, [2, 6, 1], 'Indre løkke', '10', 'yes'),
         (40, [5, 2], 'Utkjøringen', '30', 'no'),
     ]:

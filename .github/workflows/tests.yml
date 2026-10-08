@@ -20,6 +20,8 @@ jobs:
         with:
           node-version: '22'
       - run: node --check app/static/app.js
+      - run: node --check app/static/scene.js
+      - run: node --test tests/scene.test.cjs
       - run: pip install playwright
       - run: python -m playwright install --with-deps chromium
       - run: BROWSER_TESTS=1 python -m pytest tests/test_browser.py -q

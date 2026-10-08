@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .engine import add_analysis, demo_route, find_shortest_loop, speed_kmh
+from .engine import add_analysis, allowed_turn, demo_route, find_shortest_loop, speed_kmh
 from .roads import load_roads, select_point
 
 STATIC = Path(__file__).parent / 'static'
@@ -99,21 +99,22 @@ def display_name(value) -> str:
     return str(value or 'Uten veinavn')
 
 
-def approach_geometry(graph, u, v) -> list:
+def approach_geometry(graph, u, v, outgoing=False) -> list:
     """Follow an incoming road backwards to make its direction visible on map."""
-    path = [v, u]
+    path = [u, v] if outgoing else [v, u]
     distance = graph[u][v][next(iter(graph[u][v]))]['length']
     while distance < 200 and len(path) < 100:
         neighbors = set(graph.predecessors(path[-1])) | set(graph.successors(path[-1]))
         if len(neighbors) != 2:
             break
-        candidates = [n for n in graph.predecessors(path[-1]) if n not in path]
+        candidates = [n for n in (graph.successors(path[-1]) if outgoing else graph.predecessors(path[-1])) if n not in path]
         if len(candidates) != 1:
             break
         n = candidates[0]
-        distance += graph[n][path[-1]][next(iter(graph[n][path[-1]]))]['length']
+        a, b = (path[-1], n) if outgoing else (n, path[-1])
+        distance += graph[a][b][next(iter(graph[a][b]))]['length']
         path.append(n)
-    return [[graph.nodes[n]['y'], graph.nodes[n]['x']] for n in reversed(path)]
+    return [[graph.nodes[n]['y'], graph.nodes[n]['x']] for n in (path if outgoing else reversed(path))]
 
 
 @app.post('/api/intersection')
@@ -123,7 +124,12 @@ def intersection(request: PointRequest):
         junction, snap_distance = select_point(graph, request.lat, request.lon, request.selection_mode)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
-    approaches, selection = [], {}
+    approaches, selection, departures, departure_edges = [], {}, [], {}
+    for u, v, key, attrs in graph.out_edges(junction, keys=True, data=True):
+        departure_id = str(len(departures))
+        departure_edges[departure_id] = (u, v, key)
+        departures.append({'id': departure_id, 'name': display_name(attrs.get('name')),
+                           'coordinates': approach_geometry(graph, u, v, outgoing=True)})
     for u, v, key, attrs in graph.in_edges(junction, keys=True, data=True):
         kmh, tagged = speed_kmh(attrs.get('maxspeed'), request.fallback_speed_kmh)
         approach_id = str(len(approaches))
@@ -133,6 +139,8 @@ def intersection(request: PointRequest):
                            'road_type': display_name(attrs.get('highway')),
                            'speed_kmh': kmh, 'speed_from_osm': tagged,
                            'coordinates': coords,
+                           'allowed_departures': [id_ for id_, edge in departure_edges.items()
+                                                  if allowed_turn(graph, (u, v, key), edge)],
                            'from': {'lat': coords[0][0], 'lon': coords[0][1]},
                            'to': {'lat': graph.nodes[v]['y'], 'lon': graph.nodes[v]['x']}})
     if not approaches:
@@ -148,7 +156,7 @@ def intersection(request: PointRequest):
     return {'session_id': session_id,
             'junction': {'lat': graph.nodes[junction]['y'], 'lon': graph.nodes[junction]['x']},
             'snap_distance_m': round(snap_distance, 1), 'approaches': approaches,
-            'network': metadata, 'selection_mode': request.selection_mode}
+            'departures': departures, 'network': metadata, 'selection_mode': request.selection_mode}
 
 
 @app.post('/api/solve')

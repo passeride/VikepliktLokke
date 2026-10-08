@@ -27,11 +27,12 @@ Compose publiserer på localhost:8000. Endre portbindingen hvis du vil eksponere
 
 1. Søk etter et sted, skriv `62.7379, 7.1608`, bruk posisjonsknappen, eller panorer og zoom i kartet.
 2. Velg **veikryss** eller **utkjøring langs veien**, og klikk nær punktet. Kryssvalg finner en faktisk gren i veinettet innen 150 m. Utkjøringsvalg projiserer til bilveien innen 100 m og deler veisegmentet i begge kjøreretninger. Selve utkjøringen trenger ikke finnes i OSM.
-3. Velg eventuelt veien der den vikepliktige bilen står. Velg innkommende prioritert trafikk fra nummererte veier på kartet eller nedtrekkslisten. Du bekrefter selv forkjørsretten.
-4. Appen beregner både **korteste distanse** og **korteste rundetid**. Bytt mellom dem. Den raskeste løkken gir færrest biler for den samme innkommende retningen, men er ikke nødvendigvis den korteste.
-5. Resultatet viser lengde, rundetid, minste bilantall, fri tidsluke, fri avstand ved punktet og om avstandskravene tillater bilantallet. Endre fart ved manglende data, billengde eller ønsket luke for å beregne på nytt.
-6. Endre **Prøv bilantall**, for eksempel minimum minus én. Punktet blir grønt når modellen gir nok gjenværende fri tid til å kjøre ut. Pause eller juster animasjonstempoet.
-7. Under **Rute, sammenligning og datagrunnlag** finnes veisegmenter, sammenligning, GeoJSON-eksport og en delbar lenke til punkt og parametere.
+3. Velg **Hvor står jeg?** og **Hvor vil jeg kjøre?**. Den gule bilen plasseres før krysset, vendt inn mot det og forskjøvet til høyre kjørefelt. Modellen velger trafikk fra din høyre side ut fra innkjøringens retning, ikke ut fra kartets østside. Andre trafikkretninger er deaktivert. Klikk en annen nummerert innkjøring for å flytte bilen.
+4. Den blinkende gule pilen viser ønsket utkjøring. Ved sving blinker riktig side av bilen. Blå biler peker i kjøreretningen sin og kjører forbi konfliktpunktet. Vikepliktskiltet er en **illustrasjon av modellen**, ikke bekreftet skilting fra OSM. **Se krysset nært** viser situasjonen; **Vis hele løkken** gir oversikt. For en utkjøring som ikke er kartlagt, vises en illustrert sidevei, og siden kan velges.
+5. Appen beregner både **korteste distanse** og **korteste rundetid**. Bytt mellom dem. Den raskeste løkken gir færrest biler for den samme innkommende retningen, men er ikke nødvendigvis den korteste.
+6. Resultatet viser lengde, rundetid, minste bilantall, fri tidsluke, fri avstand ved punktet og om avstandskravene tillater bilantallet. Endre fart ved manglende data, billengde eller ønsket luke for å beregne på nytt.
+7. Endre **Prøv bilantall**, for eksempel minimum minus én. Punktet blir grønt når modellen gir nok gjenværende fri tid til å kjøre ut. Pause eller juster animasjonstempoet.
+8. Under **Rute, sammenligning og datagrunnlag** finnes veisegmenter, sammenligning, GeoJSON-eksport og en delbar lenke til punkt og parametere.
 
 Den stiplede rammen viser søkeområdet. Dersom ingen løkke finnes, prøv en annen retning eller et større område (opptil 5 km). Resultatet er **korteste løkke i det nedlastede og filtrerte veinettet**; større områder kan finne andre løkker. Et område rundt et nærliggende tidligere klikk kan gjenbrukes; den viste rammen er alltid den faktiske avgrensningen.
 
@@ -69,7 +70,7 @@ Hvis `N_min > N_max`, kan ingen jevnt fordelt bilstrøm samtidig blokkere lukene
 
 ## Modellens grenser
 
-- Forkjørsrett ved det valgte punktet og den vikepliktige manøveren bekreftes av brukeren. NVDB-data og automatisk skiltvalidering er ikke integrert.
+- Visningen bruker høyreregelen som modellforutsetning. Den bekrefter ikke faktisk forkjørsregulering ved et bestemt kryss. Valgte utkjøringer følger kartets kjøreretning og støttede svingeregler; en ukartlagt utkjøring er illustrert. NVDB-data og automatisk skiltvalidering er ikke integrert.
 - Lys, stopp og vikeplikt på løkken kan avbryte flyten. Kartlagte slike kontrollpunkter telles i resultatet, men ventetid simuleres ikke.
 - OSM kan mangle eller inneholde feil adgang, svingeregler og fartsgrenser. Feltskifte, rundkjøringsfelt og alle norske trafikkregler er ikke modellert.
 - Fart lik fartsgrense og momentane fartsskifter er idealiseringer. Akselerasjon, kurvefart, kø, reaksjonstid, motgående konflikter, endringer i gap acceptance og annen trafikk simuleres ikke.
@@ -80,6 +81,7 @@ Hvis `N_min > N_max`, kan ingen jevnt fordelt bilstrøm samtidig blokkere lukene
 ```bash
 python -m pytest -q
 node --check app/static/app.js
+node --test tests/scene.test.cjs
 python -m compileall -q app
 ```
 
@@ -99,7 +101,7 @@ Eller `make check` og `make browser-test`. Nettlesertestene kjører faktisk fron
 app/engine.py            Trafikkformler, svingekontroll og rutesøk
 app/roads.py             Overpass, OSM-graf, områdebuffer og punktsnapping
 app/main.py              FastAPI, stedssøk og kartøkter
-app/static/              Leaflet-kart og trafikkanimasjon
+app/static/              Leaflet-kart, førerposisjon, blinklys og trafikkanimasjon
 app/static/vendor/       Leaflet 1.9.4 (BSD-2-Clause; lisens vedlagt)
 tests/                   Modell-, API-, OSM- og nettlesertester
 Makefile / Dockerfile    Lokal oppstart og container

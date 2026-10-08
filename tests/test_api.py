@@ -12,7 +12,7 @@ def client(monkeypatch, streets):
 
 def test_full_selection_and_solve(client):
     selection = client.post('/api/intersection', json={'lat': 62.7379, 'lon': 7.1608}).json()
-    assert len(selection['approaches']) == 2
+    assert len(selection['approaches']) == 3
     assert len(selection['approaches'][0]['coordinates']) >= 2
     response = client.post('/api/solve', json={'session_id': selection['session_id'], 'approach_id': '0'})
     assert response.status_code == 200
@@ -35,7 +35,7 @@ def test_unknown_session_and_direction(client):
 
 def test_no_loop_has_useful_error(client):
     s = client.post('/api/intersection', json={'lat': 62.7379, 'lon': 7.1608}).json()
-    r = client.post('/api/solve', json={'session_id': s['session_id'], 'approach_id': '1'})
+    r = client.post('/api/solve', json={'session_id': s['session_id'], 'approach_id': '2'})
     assert r.status_code == 422 and 'søkeområdet' in r.json()['detail']
 
 
@@ -66,3 +66,14 @@ def test_search(client, monkeypatch):
     monkeypatch.setattr(main, 'search_place', lambda q: [{'name': q, 'lat': 62.7, 'lon': 7.1}])
     assert client.get('/api/search?q=Molde').json()['places'][0]['name'] == 'Molde'
     assert client.get('/api/search?q=x').status_code == 422
+
+
+def test_scene_has_outgoing_roads_and_turn_constraints(client):
+    selection = client.post('/api/intersection', json={'lat': 62.7379, 'lon': 7.1608}).json()
+    assert selection['departures']
+    assert all(d['coordinates'][0] == [62.7379, 7.1608] for d in selection['departures'])
+    waiting = selection['approaches'][1]  # Arriving southbound from north.
+    # Cannot reverse onto the northern approach, can continue south to node 5.
+    allowed = [d for d in selection['departures'] if d['id'] in waiting['allowed_departures']]
+    assert all(d['coordinates'][1] != [62.7419, 7.1608] for d in allowed)
+    assert any(d['coordinates'][1] == [62.7369, 7.1608] for d in allowed)
